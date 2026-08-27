@@ -1,0 +1,108 @@
+# =============================================================================
+# training-job.yaml - Kubernetes Job to run PyTorch CIFAR-10 training
+# =============================================================================
+
+# PersistentVolumeClaim for training data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-data-pvc
+  namespace: ml-training
+  labels:
+    project: mlops-pytorch-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# PersistentVolumeClaim for model checkpoints (shared with serving)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: checkpoints-pvc
+  namespace: ml-training
+  labels:
+    project: mlops-pytorch-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# Kubernetes Job for training
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pytorch-training
+  namespace: ml-training
+  labels:
+    project: mlops-pytorch-pipeline
+    component: training
+spec:
+  # Retry up to 2 times on failure
+  backoffLimit: 2
+  # Clean up completed job pods after 1 hour
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        project: mlops-pytorch-pipeline
+        component: training
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+        - name: pytorch-trainer
+          image: mlops-train:v1
+          imagePullPolicy: IfNotPresent
+
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              # Bonus: GPU support (uncomment if GPU nodes are available)
+              # nvidia.com/gpu: "1"
+
+          # Mount ConfigMap as config file
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/configs
+              readOnly: true
+            - name: data-volume
+              mountPath: /app/data
+            - name: checkpoints-volume
+              mountPath: /app/checkpoints
+
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+
+      volumes:
+        - name: config-volume
+          configMap:
+            name: training-config
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: training-data-pvc
+        - name: checkpoints-volume
+          persistentVolumeClaim:
+            claimName: checkpoints-pvc
+
+      # Bonus: Node selector for GPU nodes (uncomment if needed)
+      # nodeSelector:
+      #   accelerator: nvidia-tesla-t4
+
+      # Bonus: Toleration for GPU taint (uncomment if needed)
+      # tolerations:
+      #   - key: "nvidia.com/gpu"
+      #     operator: "Exists"
+      #     effect: "NoSchedule"

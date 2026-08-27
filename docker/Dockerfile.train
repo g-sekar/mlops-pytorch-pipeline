@@ -1,0 +1,51 @@
+# =============================================================================
+# Dockerfile.train - Multi-stage Dockerfile for PyTorch CIFAR-10 training
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: base - install all Python dependencies
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+# Install system dependencies needed for torch/torchvision
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies first (layer caching)
+COPY requirements/train.txt ./requirements/train.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements/train.txt
+
+# -----------------------------------------------------------------------------
+# Stage 2: training - copy source code and set runtime config
+# -----------------------------------------------------------------------------
+FROM base AS training
+
+WORKDIR /app
+
+# Copy source code and default config
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+# Create directories for data and checkpoints (will be overridden by volume mounts)
+RUN mkdir -p /app/data /app/checkpoints
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src
+
+# Run as non-root user for security
+RUN useradd --create-home --shell /bin/bash mluser \
+    && chown -R mluser:mluser /app
+USER mluser
+
+# Default entrypoint: run training script
+ENTRYPOINT ["python", "src/train.py"]

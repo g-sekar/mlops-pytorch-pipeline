@@ -1,0 +1,110 @@
+# =============================================================================
+# serving-deployment.yaml - Kubernetes Deployment for model serving
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-serving
+  namespace: ml-training
+  labels:
+    project: mlops-pytorch-pipeline
+    component: serving
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: model-serving
+
+  # Rolling update strategy: zero downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: model-serving
+        project: mlops-pytorch-pipeline
+        component: serving
+    spec:
+      containers:
+        - name: model-server
+          image: mlops-serve:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+
+          # Mount checkpoint PVC read-only
+          volumeMounts:
+            - name: checkpoints-volume
+              mountPath: /app/checkpoints
+              readOnly: true
+
+          # Environment variables
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: MODEL_CHECKPOINT
+              value: "/app/checkpoints/classifier_v1.pt"
+            - name: MODEL_ARCHITECTURE
+              value: "resnet18"
+            - name: NUM_CLASSES
+              value: "10"
+            - name: PORT
+              value: "8080"
+
+          # Liveness probe: restart container if /health fails 3 times
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          # Readiness probe: only send traffic when model is loaded
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+      volumes:
+        - name: checkpoints-volume
+          persistentVolumeClaim:
+            claimName: checkpoints-pvc
+            readOnly: true
+
+      # Spread replicas across nodes for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - model-serving
+                topologyKey: kubernetes.io/hostname

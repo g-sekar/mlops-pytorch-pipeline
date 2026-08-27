@@ -1,0 +1,49 @@
+# =============================================================================
+# Dockerfile.serve - Slim serving image for CIFAR-10 FastAPI inference app
+# =============================================================================
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install minimal system dependencies for Pillow / torch
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install inference-only dependencies (no training libs)
+COPY requirements/serve.txt ./requirements/serve.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements/serve.txt
+
+# Copy source code
+COPY src/ ./src/
+
+# Create checkpoint directory (will be overridden by volume mount)
+RUN mkdir -p /app/checkpoints
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
+    PORT=8080 \
+    MODEL_CHECKPOINT=/app/checkpoints/classifier_v1.pt \
+    MODEL_ARCHITECTURE=resnet18 \
+    NUM_CLASSES=10
+
+# Expose serving port
+EXPOSE 8080
+
+# Run as non-root user for security
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# Health check: poll /health every 30s, allow 60s startup time
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" \
+    || exit 1
+
+# Start the FastAPI app with Uvicorn
+CMD ["python", "-m", "uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
