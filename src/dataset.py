@@ -4,7 +4,6 @@ dataset.py - CIFAR-10 data loading with torchvision.
 Provides transforms and DataLoader setup for training and validation.
 """
 
-import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
