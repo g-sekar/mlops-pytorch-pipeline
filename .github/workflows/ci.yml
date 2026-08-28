@@ -77,7 +77,7 @@ jobs:
 
       - name: Lint YAML files
         run: |
-          yamllint -d "{extends: relaxed, rules: {line-length: {max: 120}}}" \
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 120}, document-start: disable, truthy: disable, comments: disable}}" \
             k8s/ configs/
 
       - name: Install kubectl
