@@ -1,4 +1,8 @@
 # training_config.yaml - Hyperparameters and paths for CIFAR-10 training
+#
+# LOCAL RUN:  data_dir and checkpoint_dir use relative paths (./data, ./checkpoints)
+# DOCKER/K8S: override via mounted volume at /app/data and /app/checkpoints
+#             (the k8s ConfigMap uses /app/* paths)
 
 model:
   architecture: resnet18   # Options: resnet18, resnet34, resnet50, cnn
@@ -14,9 +18,9 @@ training:
 
 data:
   dataset: cifar10
-  data_dir: /app/data
+  data_dir: ./data          # Relative path for local runs; Docker mounts override this
   num_workers: 2
 
 output:
-  checkpoint_dir: /app/checkpoints
+  checkpoint_dir: ./checkpoints   # Relative path for local runs; Docker mounts override this
   model_name: classifier_v1.pt
