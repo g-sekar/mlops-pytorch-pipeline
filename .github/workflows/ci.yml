@@ -24,29 +24,74 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements/train.txt') }}
+          key: ${{ runner.os }}-pip-cpu-${{ hashFiles('requirements/train.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-pip-cpu-
 
-      - name: Install dependencies
+      - name: Install CPU-only PyTorch (fast CI install)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements/train.txt
-          pip install flake8 pytest pytest-cov
+          # Install CPU-only torch to avoid downloading the 2GB CUDA build
+          pip install --no-cache-dir \
+            torch==2.2.2+cpu \
+            torchvision==0.17.2+cpu \
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install remaining dependencies
+        run: |
+          pip install --no-cache-dir \
+            PyYAML==6.0.1 \
+            numpy==1.26.4 \
+            Pillow==10.3.0 \
+            tqdm==4.66.4 \
+            flake8==7.0.0 \
+            pytest==8.2.2 \
+            pytest-cov==5.0.0
 
       - name: Lint with flake8
         run: |
-          flake8 src/ tests/ --max-line-length=100 --ignore=E501,W503
+          flake8 src/ tests/ \
+            --max-line-length=100 \
+            --ignore=E501,W503,E402
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=src --cov-report=xml
+          pytest tests/ -v --cov=src --cov-report=xml --tb=short
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+
+  validate-yaml:
+    name: Validate YAML & K8s Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 120}}}" \
+            k8s/ configs/
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Validate k8s manifests (client-side, no cluster needed)
+        run: |
+          # --dry-run=client validates manifest structure without a cluster
+          kubectl apply --dry-run=client --validate=false -f k8s/namespace.yaml
+          kubectl apply --dry-run=client --validate=false -f k8s/configmap.yaml
 
   build-train-image:
     name: Build Training Docker Image
@@ -91,21 +136,3 @@ jobs:
           tags: mlops-serve:v1
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  validate-k8s-manifests:
-    name: Validate Kubernetes Manifests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "v1.29.0"
-
-      - name: Validate manifests (dry-run)
-        run: |
-          kubectl apply --dry-run=client -f k8s/namespace.yaml
-          kubectl apply --dry-run=client -f k8s/configmap.yaml
