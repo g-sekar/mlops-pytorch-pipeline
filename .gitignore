@@ -61,3 +61,13 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.zip
+minikube-linux-amd64
+*.tar
+mlops-*.tar
+# Large binaries
+minikube-linux-amd64
+kubectl
+*.tar
+mlops-*.tar
+/data/
+/checkpoints/
