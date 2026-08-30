@@ -129,8 +129,6 @@ jobs:
           file: docker/Dockerfile.train
           push: false
           tags: mlops-train:v1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   build-serve-image:
     name: Build Serving Docker Image
@@ -151,5 +149,3 @@ jobs:
           file: docker/Dockerfile.serve
           push: false
           tags: mlops-serve:v1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
